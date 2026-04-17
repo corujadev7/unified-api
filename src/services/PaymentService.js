@@ -28,7 +28,7 @@ class PaymentService {
 
     async verifyPaymentStatus(gatewayName, transactionId) {
         try {
-            console.log(`[PaymentService] Verificando status do pagamento: ${transactionId} no gateway: ${gatewayName}`);
+            // console.log(`[PaymentService] Verificando status do pagamento: ${transactionId} no gateway: ${gatewayName}`);
 
             // Verifica se o gateway existe
             const gateway = GatewayFactory.getGateway(gatewayName);

@@ -1,12 +1,13 @@
 import paymentService from '../services/PaymentService.js';
+import statisticsService from '../services/StatisticsService.js';
 import GatewayFactory from '../gateways/index.js';
 import PixProprioGateway from '../gateways/PixProprioGateway.js';
 
 class PaymentController {
-    async processPayment(req, res) {
+  async processPayment(req, res) {
     try {
       const { amount, productTitle } = req.body;
-      
+
       // Validação: só precisa do valor, NÃO precisa do gateway
       if (!amount || amount <= 0) {
         return res.status(400).json({
@@ -15,12 +16,12 @@ class PaymentController {
           status: 'failed'
         });
       }
-      
+
       // O gateway é definido pelo ADM na dashboard, não pelo frontend
       const result = await paymentService.processPayment({ amount, productTitle });
-      
+
       return res.status(result.success ? 200 : 400).json(result);
-      
+
     } catch (error) {
       console.error('Erro em processPayment:', error);
       return res.status(500).json({
@@ -31,11 +32,11 @@ class PaymentController {
       });
     }
   }
-  
+
   // async processPayment(req, res) {
   //   try {
   //     const { gateway, amount } = req.body;
-      
+
   //     // Validações
   //     if (!gateway) {
   //       return res.status(400).json({
@@ -44,7 +45,7 @@ class PaymentController {
   //         status: 'failed'
   //       });
   //     }
-      
+
   //     if (!amount || amount <= 0) {
   //       return res.status(400).json({
   //         success: false,
@@ -52,11 +53,11 @@ class PaymentController {
   //         status: 'failed'
   //       });
   //     }
-      
+
   //     const result = await paymentService.processPayment(gateway, { amount });
-      
+
   //     return res.status(result.success ? 200 : 400).json(result);
-      
+
   //   } catch (error) {
   //     return res.status(500).json({
   //       success: false,
@@ -66,7 +67,7 @@ class PaymentController {
   //     });
   //   }
   // }
-  
+
   async getGateways(req, res) {
     try {
       const gateways = GatewayFactory.getAvailableGateways();
@@ -81,13 +82,13 @@ class PaymentController {
       });
     }
   }
-  
+
   async verifyPaymentStatus(req, res) {
     try {
       const { gateway, transactionId } = req.params;
-      
+
       const result = await paymentService.verifyPaymentStatus(gateway, transactionId);
-      
+
       return res.json({
         success: true,
         ...result
@@ -99,7 +100,7 @@ class PaymentController {
       });
     }
   }
-  
+
   // Endpoints específicos do Pix Próprio (para compatibilidade com dashboard existente)
   async getPayments(req, res) {
     try {
@@ -107,9 +108,9 @@ class PaymentController {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 50;
       const search = req.query.search || '';
-      
+
       const result = await pixGateway.getAllPayments(page, limit, search);
-      
+
       return res.json({
         success: true,
         data: result.payments,
@@ -127,20 +128,20 @@ class PaymentController {
       });
     }
   }
-  
+
   async getPaymentByTxid(req, res) {
     try {
       const { txid } = req.params;
       const pixGateway = new PixProprioGateway();
       const payment = await pixGateway.getPayment(txid);
-      
+
       if (!payment) {
         return res.status(404).json({
           success: false,
           message: 'Pagamento não encontrado'
         });
       }
-      
+
       return res.json({
         success: true,
         data: payment
@@ -152,23 +153,47 @@ class PaymentController {
       });
     }
   }
-  
+
+  // async getStats(req, res) {
+  //   try {
+  //     const pixGateway = new PixProprioGateway();
+  //     const stats = await pixGateway.getStats();
+
+  //     console.log(stats)
+
+  //     return res.json({
+  //       success: true,
+  //       data: stats
+  //     });
+  //   } catch (error) {
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: error.message
+  //     });
+  //   }
+  // }
   async getStats(req, res) {
     try {
-      const pixGateway = new PixProprioGateway();
-      const stats = await pixGateway.getStats();
-      
+      const { gateway } = req.query;
+
+      // Usa o service para buscar as estatísticas
+      const stats = await statisticsService.getEstatisticasCompletas(gateway);
+
       return res.json({
         success: true,
-        data: stats
+        data: stats,
+        gateway_filtrado: gateway || 'todos'
       });
+
     } catch (error) {
+      console.error('Erro ao buscar estatísticas:', error);
       return res.status(500).json({
         success: false,
         message: error.message
       });
     }
   }
+
 }
 
 export default new PaymentController();
