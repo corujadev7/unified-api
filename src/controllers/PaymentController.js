@@ -1,7 +1,8 @@
 import paymentService from '../services/PaymentService.js';
-import statisticsService from '../services/StatisticsService.js';
+import StatisticsService from '../services/StatisticsService.js';
 import GatewayFactory from '../gateways/index.js';
 import PixProprioGateway from '../gateways/PixProprioGateway.js';
+import { getDb } from '../database/database.js';
 
 class PaymentController {
   async processPayment(req, res) {
@@ -174,19 +175,98 @@ class PaymentController {
   // }
   async getStats(req, res) {
     try {
-      const { gateway } = req.query;
+      const { gateway, startDate, endDate } = req.query;
 
-      // Usa o service para buscar as estatísticas
-      const stats = await statisticsService.getEstatisticasCompletas(gateway);
+      console.log('Filtros:', { gateway, startDate, endDate });
+
+      const stats = await StatisticsService.getEstatisticasCompletas(gateway, startDate, endDate);
 
       return res.json({
         success: true,
         data: stats,
-        gateway_filtrado: gateway || 'todos'
+        filtros: {
+          gateway: gateway || 'todos',
+          startDate: startDate || null,
+          endDate: endDate || null
+        }
       });
 
     } catch (error) {
       console.error('Erro ao buscar estatísticas:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // Listagem de pagamentos com filtro de datas
+  async getPayments(req, res) {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const search = req.query.search || '';
+      const gateway = req.query.gateway;
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+      const skip = (page - 1) * limit;
+
+      const db = getDb();
+
+      let filter = {};
+
+      // Filtro de gateway
+      if (gateway === 'velana') {
+        filter.gateway = 'velana';
+      }
+
+      // Filtro de datas
+      if (startDate || endDate) {
+        filter.data_criacao = {};
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          filter.data_criacao.$gte = start;
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          filter.data_criacao.$lte = end;
+        }
+      }
+
+      // Busca por TXID
+      if (search) {
+        filter.txid = { $regex: search, $options: 'i' };
+      }
+
+      const payments = await db.collection('pagamentos')
+        .find(filter)
+        .sort({ data_criacao: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      const total = await db.collection('pagamentos').countDocuments(filter);
+
+      return res.json({
+        success: true,
+        data: payments,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        },
+        filtros: {
+          gateway: gateway || 'todos',
+          startDate: startDate || null,
+          endDate: endDate || null
+        }
+      });
+
+    } catch (error) {
+      console.error('Erro ao listar pagamentos:', error);
       return res.status(500).json({
         success: false,
         message: error.message

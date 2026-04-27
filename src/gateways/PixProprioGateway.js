@@ -2,8 +2,28 @@ import { gerarPix } from '../pix.js';
 import { getConfig, incrementarEstatisticasDiarias, getDb } from '../database/database.js';
 import PixProprioAdapter from '../adapters/PixProprioAdapter.js';
 import crypto from 'crypto';
+import moment from 'moment-timezone';
 
 class PixProprioGateway {
+    
+    // ⭐ Método auxiliar para converter data para horário do Brasil
+    getDataBrasil(dataUTC) {
+        const TIMEZONE_BRASIL = 'America/Sao_Paulo';
+        return moment(dataUTC).tz(TIMEZONE_BRASIL);
+    }
+
+    // ⭐ Método auxiliar para obter início do dia no Brasil
+    getInicioDiaBrasil() {
+        const TIMEZONE_BRASIL = 'America/Sao_Paulo';
+        return moment.tz(TIMEZONE_BRASIL).startOf('day').toDate();
+    }
+
+    // ⭐ Método auxiliar para obter fim do dia no Brasil
+    getFimDiaBrasil() {
+        const TIMEZONE_BRASIL = 'America/Sao_Paulo';
+        return moment.tz(TIMEZONE_BRASIL).endOf('day').toDate();
+    }
+
     async processPayment(paymentData) {
         try {
             const chavePixAtual = await getConfig('pix_key');
@@ -15,7 +35,7 @@ class PixProprioGateway {
                 txid: txid
             });
 
-            // Salvar no MongoDB
+            // ⭐ Salvar com timestamp UTC (padrão do banco)
             const db = getDb();
             await db.collection('pagamentos').insertOne({
                 txid: resultado.txid,
@@ -24,13 +44,12 @@ class PixProprioGateway {
                 nome_recebedor: "FREE FLOW",
                 cidade: "SAO PAULO",
                 status: 'gerado',
-                data_criacao: new Date(),
+                data_criacao: new Date(), // UTC
                 gateway: 'pix_proprio',
-                // metadata: JSON.stringify({ user_agent: req.headers['user-agent']})
             });
 
-            // Atualizar estatísticas
-            await incrementarEstatisticasDiarias(resultado.valor);
+            // ⭐ Atualizar estatísticas (a função já deve estar corrigida para usar Brasil)
+            await incrementarEstatisticasDiarias(resultado.valor, 'pix_proprio');
 
             // Normaliza a resposta
             return PixProprioAdapter.normalize({
@@ -50,6 +69,15 @@ class PixProprioGateway {
     async getPayment(txid) {
         const db = getDb();
         const payment = await db.collection('pagamentos').findOne({ txid });
+        
+        // ⭐ Opcional: Adicionar data formatada para o Brasil
+        if (payment) {
+            const TIMEZONE_BRASIL = 'America/Sao_Paulo';
+            payment.data_criacao_formatada = moment(payment.data_criacao)
+                .tz(TIMEZONE_BRASIL)
+                .format('DD/MM/YYYY HH:mm:ss');
+        }
+        
         return payment;
     }
 
@@ -57,9 +85,9 @@ class PixProprioGateway {
         const db = getDb();
         const skip = (page - 1) * limit;
 
-        let query = {};
+        let query = { gateway: 'pix_proprio' };
         if (search) {
-            query = { txid: { $regex: search, $options: 'i' } };
+            query.txid = { $regex: search, $options: 'i' };
         }
 
         const payments = await db.collection('pagamentos')
@@ -71,43 +99,86 @@ class PixProprioGateway {
 
         const total = await db.collection('pagamentos').countDocuments(query);
 
-        return { payments, total, page, limit, pages: Math.ceil(total / limit) };
+        // ⭐ Formatar datas para o Brasil
+        const TIMEZONE_BRASIL = 'America/Sao_Paulo';
+        const paymentsFormatados = payments.map(p => ({
+            ...p,
+            data_criacao_brasil: moment(p.data_criacao).tz(TIMEZONE_BRASIL).format('DD/MM/YYYY HH:mm:ss'),
+            data_brasil: moment(p.data_criacao).tz(TIMEZONE_BRASIL).format('YYYY-MM-DD')
+        }));
+
+        return { 
+            payments: paymentsFormatados, 
+            total, 
+            page, 
+            limit, 
+            pages: Math.ceil(total / limit) 
+        };
     }
 
     async getStats() {
         const db = getDb();
+        const TIMEZONE_BRASIL = 'America/Sao_Paulo';
 
-        const total = await db.collection('pagamentos').countDocuments();
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
+        const total = await db.collection('pagamentos').countDocuments({ gateway: 'pix_proprio' });
+        
+        // ⭐ CORREÇÃO: Usar horário do Brasil para "hoje"
+        const hojeInicio = this.getInicioDiaBrasil();
+        const hojeFim = this.getFimDiaBrasil();
 
         const hojeCount = await db.collection('pagamentos').countDocuments({
-            data_criacao: { $gte: hoje }
+            gateway: 'pix_proprio',
+            data_criacao: { $gte: hojeInicio, $lte: hojeFim }
         });
+
+        console.log(`[DEBUG] Stats do Pix Próprio:`);
+        console.log(`  - Total: ${total}`);
+        console.log(`  - Hoje (Brasil): ${hojeCount}`);
+        console.log(`  - Período: ${hojeInicio.toISOString()} até ${hojeFim.toISOString()}`);
 
         return { total, hoje: hojeCount };
     }
 
-    async getEstatisticasCompletas() {
+    // ⭐ CORREÇÃO COMPLETA: getEstatisticasCompletas com fuso horário do Brasil
+    async getEstatisticasCompletas(startDate = null, endDate = null) {
         const db = getDb();
+        const TIMEZONE_BRASIL = 'America/Sao_Paulo';
 
         // Função para converter string para número com casas decimais
         const converterParaNumero = (valor) => {
             if (valor === undefined || valor === null) return 0;
             if (typeof valor === 'number') return valor;
             if (typeof valor === 'string') {
-                // Converte "68.5" para 68.5
                 const numero = parseFloat(valor);
                 return isNaN(numero) ? 0 : numero;
             }
             return 0;
         };
 
+        // ⭐ Montar filtro com suporte a datas personalizadas
+        let filter = { gateway: 'pix_proprio' };
+        
+        if (startDate || endDate) {
+            filter.data_criacao = {};
+            
+            if (startDate) {
+                const start = moment.tz(startDate, TIMEZONE_BRASIL).startOf('day').utc().toDate();
+                filter.data_criacao.$gte = start;
+                console.log(`[DEBUG] Start date (Brasil): ${startDate} -> UTC: ${start.toISOString()}`);
+            }
+            
+            if (endDate) {
+                const end = moment.tz(endDate, TIMEZONE_BRASIL).endOf('day').utc().toDate();
+                filter.data_criacao.$lte = end;
+                console.log(`[DEBUG] End date (Brasil): ${endDate} -> UTC: ${end.toISOString()}`);
+            }
+        }
+
         // Total geral
-        const totalGeral = await db.collection('pagamentos').countDocuments();
+        const totalGeral = await db.collection('pagamentos').countDocuments(filter);
 
         // Buscar TODOS os pagamentos
-        const todosPagamentos = await db.collection('pagamentos').find({}).toArray();
+        const todosPagamentos = await db.collection('pagamentos').find(filter).toArray();
 
         // Calcular soma total corretamente
         let somaTotal = 0;
@@ -115,13 +186,12 @@ class PixProprioGateway {
             somaTotal += converterParaNumero(p.valor);
         }
 
-        // Total hoje
-        const hojeInicio = new Date();
-        hojeInicio.setHours(0, 0, 0, 0);
-        const hojeFim = new Date();
-        hojeFim.setHours(23, 59, 59, 999);
+        // ⭐ CORREÇÃO: Total hoje no horário do Brasil
+        const hojeInicio = this.getInicioDiaBrasil();
+        const hojeFim = this.getFimDiaBrasil();
 
         const pagamentosHoje = await db.collection('pagamentos').find({
+            gateway: 'pix_proprio',
             data_criacao: { $gte: hojeInicio, $lte: hojeFim }
         }).toArray();
 
@@ -155,17 +225,19 @@ class PixProprioGateway {
             valor_total: data.valor_total
         }));
 
-        // Últimos 7 dias
-        const seteDiasAtras = new Date();
-        seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
+        // ⭐ CORREÇÃO: Últimos 7 dias no horário do Brasil
+        const seteDiasAtras = moment.tz(TIMEZONE_BRASIL).subtract(7, 'days').startOf('day').utc().toDate();
 
         const pagamentosUltimos7Dias = await db.collection('pagamentos').find({
+            gateway: 'pix_proprio',
             data_criacao: { $gte: seteDiasAtras }
         }).toArray();
 
         const diasMap = new Map();
         for (const p of pagamentosUltimos7Dias) {
-            const dataStr = p.data_criacao.toISOString().split('T')[0];
+            // ⭐ Converter data para horário do Brasil para agrupar corretamente
+            const dataBrasil = moment(p.data_criacao).tz(TIMEZONE_BRASIL);
+            const dataStr = dataBrasil.format('YYYY-MM-DD');
             const valor = converterParaNumero(p.valor);
 
             if (!diasMap.has(dataStr)) {
@@ -196,21 +268,40 @@ class PixProprioGateway {
         }
         const valorMedio = quantidadeComValor > 0 ? somaValores / quantidadeComValor : 0;
 
-        console.log('Debug - Soma total:', somaTotal);
-        console.log('Debug - Quantidade:', totalGeral);
-        console.log('Debug - Ticket médio:', valorMedio);
+        // Logs de debug com horário do Brasil
+        const agoraBrasil = moment.tz(TIMEZONE_BRASIL).format('YYYY-MM-DD HH:mm:ss');
+        console.log('📊 Debug - Pix Próprio:');
+        console.log(`  - Horário atual (Brasil): ${agoraBrasil}`);
+        console.log(`  - Total de pagamentos: ${totalGeral}`);
+        console.log(`  - Soma total: R$ ${somaTotal.toFixed(2)}`);
+        console.log(`  - Ticket médio: R$ ${valorMedio.toFixed(2)}`);
+        console.log(`  - Pagamentos hoje: ${hoje.quantidade} (R$ ${somaHoje.toFixed(2)})`);
+        console.log(`  - Período hoje: ${hojeInicio.toISOString()} até ${hojeFim.toISOString()}`);
 
         return {
             total_gerados: totalGeral,
-            valor_total: somaTotal,  // Adicionar campo valor_total
+            valor_total: somaTotal,
             hoje: {
                 quantidade: hoje.quantidade,
-                valor_total: hoje.valor_total
+                valor_total: somaHoje
             },
             por_status: porStatus,
             ultimos_7_dias: ultimos7Dias,
             valor_medio: valorMedio
         };
+    }
+
+    // ⭐ NOVO MÉTODO: Para buscar estatísticas com filtro de datas
+    async getEstatisticasPorPeriodo(startDate, endDate) {
+        return this.getEstatisticasCompletas(startDate, endDate);
+    }
+
+    // ⭐ NOVO MÉTODO: Para formatar valores monetários
+    formatarMoeda(valor) {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(valor);
     }
 }
 
