@@ -29,5 +29,5 @@ const PORT = process.env.PORT || 5004;
 
 app.listen(PORT, () => {
     console.log(`🚀 API Unificada de Pagamentos rodando na porta ${PORT}`);
-    console.log(`📋 Gateways disponíveis: velana, pix_proprio`);
+    console.log(`📋 Gateways disponíveis: velana, pix_proprio, sharkhub`);
 });

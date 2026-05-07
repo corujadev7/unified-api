@@ -135,8 +135,6 @@ export async function getAllConfigs() {
 
 
 
-// No arquivo database.js
-import moment from 'moment-timezone';
 
 export async function incrementarEstatisticasDiarias(valor, gateway = 'pix_proprio') {
     try {
