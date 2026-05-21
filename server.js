@@ -7,66 +7,17 @@ import morgan from 'morgan';
 
 import paymentRoutes from './src/routes/paymentRoutes.js';
 import configRoutes from './src/routes/configRoutes.js';
-
 import { initializeDatabase } from './src/database/database.js';
 
 dotenv.config();
 
 const app = express();
 
-/*
-|--------------------------------------------------------------------------
-| Segurança básica
-|--------------------------------------------------------------------------
-*/
-
 app.use(helmet());
-
-app.set('trust proxy', 1);
-
-/*
-|--------------------------------------------------------------------------
-| Logs
-|--------------------------------------------------------------------------
-*/
 
 app.use(morgan('combined'));
 
-/*
-|--------------------------------------------------------------------------
-| CORS
-|--------------------------------------------------------------------------
-*/
-
-const allowedOrigins = [
-   'https://viaexpressamg.top',
-   'https://loboautomoveis.top'
-];
-
-const corsOptions = {
-   origin: function(origin, callback){
-
-      // Permite requests sem origin (Postman/backend)
-      if(!origin) return callback(null, true);
-
-      if(allowedOrigins.includes(origin)){
-         callback(null, true);
-      } else {
-         callback(new Error('Origem não permitida'));
-      }
-   },
-
-   methods: ['GET', 'POST', 'OPTIONS'],
-   allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
-
-/*
-|--------------------------------------------------------------------------
-| Limite JSON
-|--------------------------------------------------------------------------
-*/
+app.set('trust proxy', 1);
 
 app.use(express.json({
    limit:'100kb'
@@ -74,43 +25,34 @@ app.use(express.json({
 
 /*
 |--------------------------------------------------------------------------
-| Rate Limit Global
+| CORS
 |--------------------------------------------------------------------------
 */
 
-const globalLimiter = rateLimit({
+app.use(cors({
+   origin:false
+}));
+
+/*
+|--------------------------------------------------------------------------
+| RATE LIMIT
+|--------------------------------------------------------------------------
+*/
+
+const limiter = rateLimit({
    windowMs: 1 * 60 * 1000,
-   max: 100,
-   standardHeaders: true,
-   legacyHeaders: false,
+   max: 10,
 
    message:{
       error:'Muitas requisições'
    }
 });
 
-app.use(globalLimiter);
+app.use(limiter);
 
 /*
 |--------------------------------------------------------------------------
-| Rate Limit pagamento
-|--------------------------------------------------------------------------
-*/
-
-const paymentLimiter = rateLimit({
-   windowMs: 1 * 60 * 1000,
-   max: 5,
-
-   message:{
-      error:'Limite de pagamentos excedido'
-   }
-});
-
-app.use('/api/pix', paymentLimiter);
-
-/*
-|--------------------------------------------------------------------------
-| Middleware Auth
+| AUTH MIDDLEWARE
 |--------------------------------------------------------------------------
 */
 
@@ -135,7 +77,7 @@ function authMiddleware(req,res,next){
 
 /*
 |--------------------------------------------------------------------------
-| Banco
+| DATABASE
 |--------------------------------------------------------------------------
 */
 
@@ -143,7 +85,7 @@ await initializeDatabase();
 
 /*
 |--------------------------------------------------------------------------
-| Rotas protegidas
+| ROTAS
 |--------------------------------------------------------------------------
 */
 
@@ -152,7 +94,7 @@ app.use('/api', authMiddleware, configRoutes);
 
 /*
 |--------------------------------------------------------------------------
-| Health Check
+| HEALTH CHECK
 |--------------------------------------------------------------------------
 */
 
@@ -162,16 +104,8 @@ app.get('/', (req,res)=>{
    });
 });
 
-/*
-|--------------------------------------------------------------------------
-| Start
-|--------------------------------------------------------------------------
-*/
-
 const PORT = process.env.PORT || 5004;
 
 app.listen(PORT, () => {
-
-   console.log(`🚀 API Unificada rodando na porta ${PORT}`);
-
+   console.log(`🚀 API PIX rodando na porta ${PORT}`);
 });
