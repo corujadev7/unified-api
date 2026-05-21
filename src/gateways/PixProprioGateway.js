@@ -41,7 +41,7 @@ class PixProprioGateway {
                 txid: resultado.txid,
                 valor: resultado.valor,
                 chave_pix: chavePixAtual,
-                nome_recebedor: "FREE FLOW",
+                nome_recebedor: paymentData.productTitle,
                 cidade: "SAO PAULO",
                 status: 'gerado',
                 data_criacao: new Date(), // UTC

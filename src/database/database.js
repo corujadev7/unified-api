@@ -141,7 +141,7 @@ export async function incrementarEstatisticasDiarias(valor, gateway = 'pix_propr
         const db = getDb();
         const TIMEZONE_BRASIL = 'America/Sao_Paulo';
         
-        // ⭐ CORREÇÃO: Usar data do Brasil
+        //  CORREÇÃO: Usar data do Brasil
         const hoje = moment.tz(TIMEZONE_BRASIL).format('YYYY-MM-DD');
 
         const converterParaNumero = (val) => {

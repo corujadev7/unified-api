@@ -16,8 +16,11 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.1.0",
     "moment-timezone": "^0.6.2",
     "mongodb": "^7.1.1",
+    "morgan": "^1.10.1",
     "pix-payload": "^1.0.4",
     "qrcode": "^1.5.4"
   },
