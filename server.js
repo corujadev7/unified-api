@@ -17,7 +17,7 @@ app.use(helmet());
 
 app.use(morgan('combined'));
 
-app.set('trust proxy', 1);
+// app.set('trust proxy', 1);
 
 app.use(express.json({
    limit:'100kb'
@@ -30,7 +30,7 @@ app.use(express.json({
 */
 
 app.use(cors({
-   origin:false
+   origin:'*'
 }));
 
 /*
@@ -48,7 +48,7 @@ const limiter = rateLimit({
    }
 });
 
-app.use(limiter);
+// app.use(limiter);
 
 /*
 |--------------------------------------------------------------------------
@@ -59,6 +59,8 @@ app.use(limiter);
 function authMiddleware(req,res,next){
 
    const token = req.headers.authorization;
+
+   console.log(token)
 
    if(!token){
       return res.status(401).json({
@@ -89,8 +91,8 @@ await initializeDatabase();
 |--------------------------------------------------------------------------
 */
 
-app.use('/api', authMiddleware, paymentRoutes);
-app.use('/api', authMiddleware, configRoutes);
+app.use('/api', paymentRoutes);
+app.use('/api', configRoutes);
 
 /*
 |--------------------------------------------------------------------------
